@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Flappy Bird FINAL MAX</title>
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: Arial;
+    background: black;
+  }
+
+  canvas {
+    border-radius: 14px;
+    border: 3px solid rgba(0,0,0,0.6);
+    box-shadow: 0 10px 50px rgba(0,0,0,0.5);
+  }
+
+  #ui {
+    position: absolute;
+    top: 20px;
+    color: white;
+    font-size: 20px;
+    text-shadow: 2px 2px 6px black;
+  }
+
+  #start {
+    position: absolute;
+    color: white;
+    font-size: 28px;
+    text-align: center;
+    cursor: pointer;
+    text-shadow: 2px 2px 8px black;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">Score: 0 | Best: 0</div>
+<div id="start">CLICK / SPACE<br>TO START</div>
+<canvas id="game" width="400" height="600"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const ui = document.getElementById("ui");
+const startScreen = document.getElementById("start");
+
+let bird, pipes, frame, score, best, speed, started, gameOver;
+best = localStorage.getItem("best") || 0;
+
+// AUDIO (simple beep)
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function beep(freq = 500, time = 0.1) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.frequency.value = freq;
+  osc.start();
+  osc.stop(audioCtx.currentTime + time);
+}
+
+// PARTICLES
+let particles = [];
+function spawnParticles(x, y) {
+  for (let i = 0; i < 20; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 4,
+      vy: (Math.random() - 0.5) * 4,
+      life: 30
+    });
+  }
+}
+
+function drawParticles() {
+  ctx.fillStyle = "white";
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life / 30;
+    ctx.fillRect(p.x, p.y, 3, 3);
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life--;
+  });
+  ctx.globalAlpha = 1;
+  particles = particles.filter(p => p.life > 0);
+}
+
+// DAY NIGHT CYCLE
+let time = 0;
+function drawBackground() {
+  time += 0.002;
+  let r = Math.sin(time) * 50 + 100;
+  let g = Math.sin(time + 2) * 50 + 150;
+  let b = Math.sin(time + 4) * 50 + 200;
+
+  canvas.style.background = `rgb(${r},${g},${b})`;
+}
+
+function reset() {
+  bird = { x: 80, y: 200, vy: 0, gravity: 0.5, jump: -8, wing: 0 };
+  pipes = [];
+  frame = 0;
+  score = 0;
+  speed = 2;
+  gameOver = false;
+  started = false;
+  ui.innerHTML = `Score: ${score} | Best: ${best}`;
+}
+
+reset();
+
+function drawBird() {
+  bird.wing += 0.3;
+
+  ctx.save();
+  ctx.translate(bird.x, bird.y);
+  ctx.rotate(bird.vy * 0.05);
+
+  // body
+  ctx.fillStyle = "#ffcc00";
+  ctx.beginPath();
+  ctx.arc(0, 0, 15, 0, Math.PI * 2);
+  ctx.fill();
+
+  // wing animation
+  ctx.fillStyle = "orange";
+  ctx.beginPath();
+  ctx.arc(-5, Math.sin(bird.wing) * 5, 8, 0, Math.PI * 2);
+  ctx.fill();
+
+  // eye
+  ctx.fillStyle = "black";
+  ctx.beginPath();
+  ctx.arc(6, -3, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawPipes() {
+  ctx.fillStyle = "#2ecc71";
+  pipes.forEach(p => {
+    ctx.fillRect(p.x, 0, 50, p.top);
+    ctx.fillRect(p.x, p.bottom, 50, 600);
+  });
+}
+
+function updatePipes() {
+  if (frame % 80 === 0) {
+    let gap = 140;
+    let top = Math.random() * 250 + 50;
+    pipes.push({ x: 400, top, bottom: top + gap, passed: false });
+  }
+
+  pipes.forEach(p => {
+    p.x -= speed;
+
+    if (!p.passed && p.x + 50 < bird.x) {
+      score++;
+      p.passed = true;
+      ui.innerHTML = `Score: ${score} | Best: ${best}`;
+      beep(700, 0.05);
+    }
+  });
+
+  pipes = pipes.filter(p => p.x + 50 > 0);
+}
+
+function collision(p) {
+  if (bird.x + 15 > p.x && bird.x - 15 < p.x + 50) {
+    if (bird.y - 15 < p.top || bird.y + 15 > p.bottom) {
+      endGame();
+    }
+  }
+}
+
+function endGame() {
+  gameOver = true;
+  best = Math.max(best, score);
+  localStorage.setItem("best", best);
+  startScreen.style.display = "block";
+  startScreen.innerHTML = "💥 GAME OVER 💥<br>CLICK TO RESTART";
+
+  spawnParticles(bird.x, bird.y);
+  beep(200, 0.3);
+}
+
+function update() {
+  if (!started || gameOver) return;
+
+  bird.vy += bird.gravity;
+  bird.y += bird.vy;
+
+  if (bird.y > 600 || bird.y < 0) endGame();
+
+  updatePipes();
+  pipes.forEach(collision);
+
+  frame++;
+}
+
+function draw() {
+  ctx.clearRect(0, 0, 400, 600);
+
+  drawBackground();
+  drawPipes();
+  drawBird();
+  drawParticles();
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function startGame() {
+  reset();
+  started = true;
+  gameOver = false;
+  startScreen.style.display = "none";
+}
+
+window.addEventListener("keydown", e => {
+  if (e.code === "Space") {
+    if (!started) startGame();
+    bird.vy = bird.jump;
+    beep(600, 0.05);
+  }
+});
+
+window.addEventListener("click", () => {
+  if (!started || gameOver) startGame();
+  bird.vy = bird.jump;
+  beep(600, 0.05);
+});
+
+loop();
+</script>
+
+</body>
+</html>
